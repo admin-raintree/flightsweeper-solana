@@ -49,11 +49,13 @@ export function paymentUrl(recipient, reference) {
 
 export function verifiedPayer(transaction, { recipient, reference }) {
   const keys = transaction?.transaction?.message?.accountKeys;
+  const instructions = transaction?.transaction?.message?.instructions;
   const before = transaction?.meta?.preTokenBalances;
   const after = transaction?.meta?.postTokenBalances;
   if (
     transaction?.meta?.err !== null ||
     !Array.isArray(keys) ||
+    !Array.isArray(instructions) ||
     !keys.some((key) => key.pubkey === reference && key.signer === false && key.writable === false) ||
     !Array.isArray(before) ||
     !Array.isArray(after)
@@ -69,21 +71,34 @@ export function verifiedPayer(transaction, { recipient, reference }) {
       throw new PaymentMismatch("Token amount is invalid");
     }
   };
-  const matching = after.filter((entry) => entry.mint === DEVNET_USDC_MINT && entry.owner === recipient);
-  const received = matching.reduce((sum, entry) => {
-    const previous = before.find((item) => item.accountIndex === entry.accountIndex);
-    if (previous?.mint !== DEVNET_USDC_MINT || previous.owner !== recipient) {
-      throw new PaymentMismatch("Recipient token account differs");
-    }
-    return sum + balance(entry) - balance(previous);
-  }, 0n);
-  if (received !== AMOUNT_BASE_UNITS) throw new PaymentMismatch("Received amount differs");
+  const recipients = after.filter((entry) => entry.mint === DEVNET_USDC_MINT && entry.owner === recipient);
+  if (recipients.length !== 1) throw new PaymentMismatch("Recipient token account is ambiguous");
+  const destination = recipients[0];
+  const previous = before.find((entry) => entry.accountIndex === destination.accountIndex);
+  if (previous?.mint !== DEVNET_USDC_MINT || previous.owner !== recipient ||
+    balance(destination) - balance(previous) !== AMOUNT_BASE_UNITS) {
+    throw new PaymentMismatch("Received amount differs");
+  }
 
-  const payers = before.filter((entry) => {
-    if (entry.mint !== DEVNET_USDC_MINT || !entry.owner || entry.owner === recipient) return false;
-    const next = after.find((item) => item.accountIndex === entry.accountIndex);
-    return next?.mint === DEVNET_USDC_MINT && balance(entry) - balance(next) >= AMOUNT_BASE_UNITS;
+  const destinationAddress = keys[destination.accountIndex]?.pubkey;
+  const transfers = instructions.filter((instruction) => {
+    const info = instruction.parsed?.info;
+    return instruction.program === "spl-token" &&
+      ["transfer", "transferChecked"].includes(instruction.parsed?.type) &&
+      info?.destination === destinationAddress &&
+      (info.mint === undefined || info.mint === DEVNET_USDC_MINT) &&
+      (info.tokenAmount?.amount ?? info.amount) === String(AMOUNT_BASE_UNITS);
   });
-  if (payers.length !== 1) throw new PaymentMismatch("Payer is ambiguous");
-  return payers[0].owner;
+  if (transfers.length !== 1) throw new PaymentMismatch("Transfer instruction differs");
+  const sourceAddress = transfers[0].parsed.info.source;
+  const sourceIndex = keys.findIndex((key) => key.pubkey === sourceAddress);
+  const sourceBefore = before.find((entry) => entry.accountIndex === sourceIndex);
+  const sourceAfter = after.find((entry) => entry.accountIndex === sourceIndex);
+  if (sourceBefore?.mint !== DEVNET_USDC_MINT || sourceAfter?.mint !== DEVNET_USDC_MINT ||
+    !sourceBefore.owner || sourceBefore.owner === recipient ||
+    sourceBefore.owner !== sourceAfter.owner ||
+    balance(sourceBefore) - balance(sourceAfter) < AMOUNT_BASE_UNITS) {
+    throw new PaymentMismatch("Transfer payer differs");
+  }
+  return sourceBefore.owner;
 }

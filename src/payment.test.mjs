@@ -11,6 +11,8 @@ import {
 const recipient = "8X39qt9Di4MtoAc1E2qV5tAtvWrbgAek1G7dHBYHcGBq";
 const payer = "7ZPJhZfjtNxZBVgP7YAFhBPpQ8QCkaQ9HDVNTM5FXXQv";
 const reference = "5caW14tj2JnzEi2Qa7EZwRLF3XFjYEjRpTFRD3wbgB6t";
+const destination = "recipient-token-account";
+const source = "payer-token-account";
 const balance = (accountIndex, owner, amount, mint = DEVNET_USDC_MINT) => ({
   accountIndex,
   owner,
@@ -23,7 +25,17 @@ const transaction = () => ({
     preTokenBalances: [balance(1, recipient, 10_000), balance(2, payer, 19_990_000)],
     postTokenBalances: [balance(1, recipient, 20_000), balance(2, payer, 19_980_000)],
   },
-  transaction: { message: { accountKeys: [{ pubkey: reference, signer: false, writable: false }] } },
+  transaction: { message: {
+    accountKeys: [
+      { pubkey: payer, signer: true, writable: true },
+      { pubkey: destination, signer: false, writable: true },
+      { pubkey: source, signer: false, writable: true },
+      { pubkey: reference, signer: false, writable: false },
+    ],
+    instructions: [{ program: "spl-token", parsed: { type: "transferChecked", info: {
+      source, destination, mint: DEVNET_USDC_MINT, tokenAmount: { amount: "10000" },
+    } } }],
+  } },
 });
 
 test("reference is a public key in a Devnet USDC Solana Pay URL", () => {
@@ -47,4 +59,10 @@ test("wrong reference and mint cannot settle an invoice", () => {
   const wrongMint = transaction();
   wrongMint.meta.postTokenBalances[0].mint = "wrong";
   expect(() => verifiedPayer(wrongMint, { recipient, reference })).toThrow(PaymentMismatch);
+});
+
+test("payer must own the source account for the recipient transfer", () => {
+  const unrelatedDebit = transaction();
+  unrelatedDebit.transaction.message.instructions[0].parsed.info.source = "other-account";
+  expect(() => verifiedPayer(unrelatedDebit, { recipient, reference })).toThrow(PaymentMismatch);
 });
