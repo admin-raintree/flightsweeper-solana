@@ -1,6 +1,6 @@
 {
   "name": "flightsweeper-solana",
-  "private": false,
+  "private": true,
   "version": "0.1.0",
   "type": "module",
   "license": "MIT",

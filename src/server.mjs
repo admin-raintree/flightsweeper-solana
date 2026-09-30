@@ -17,6 +17,7 @@ const DUFFEL_TOKEN = process.env.DUFFEL_TEST_TOKEN;
 const AGENT_TOKEN = process.env.AGENT_API_TOKEN;
 const RECIPIENT = process.env.FEE_RECIPIENT;
 const PORT = Number(process.env.PORT ?? 8787);
+const HOST = process.env.HOST ?? "127.0.0.1";
 const DB_PATH = process.env.DB_PATH ?? ".data/invoices.sqlite";
 const RPC_URL = "https://api.devnet.solana.com";
 
@@ -24,6 +25,7 @@ if (!DUFFEL_TOKEN?.startsWith("duffel_test_")) throw new Error("DUFFEL_TEST_TOKE
 if (!AGENT_TOKEN || AGENT_TOKEN.length < 32) throw new Error("AGENT_API_TOKEN must have at least 32 characters");
 if (!isPublicKey(RECIPIENT)) throw new Error("FEE_RECIPIENT must be a Solana public key");
 if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) throw new Error("PORT is invalid");
+if (!["127.0.0.1", "0.0.0.0"].includes(HOST)) throw new Error("HOST is invalid");
 
 mkdirSync(dirname(DB_PATH), { recursive: true, mode: 0o700 });
 const db = new Database(DB_PATH, { create: true });
@@ -244,6 +246,23 @@ async function reconcile(row, submittedSignature) {
 
 async function handle(request) {
   const url = new URL(request.url);
+  const assets = {
+    "/": ["../web/index.html", "text/html; charset=utf-8"],
+    "/app.js": ["../web/app.js", "text/javascript; charset=utf-8"],
+    "/style.css": ["../web/style.css", "text/css; charset=utf-8"],
+  };
+  if (request.method === "GET" && assets[url.pathname]) {
+    const [path, contentType] = assets[url.pathname];
+    return new Response(Bun.file(new URL(path, import.meta.url)), {
+      headers: {
+        "Content-Type": contentType,
+        "Cache-Control": "no-store",
+        "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'",
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "no-referrer",
+      },
+    });
+  }
   if (url.pathname === "/health" && request.method === "GET") {
     return response({ status: "ok", environment: "solana_devnet_test" });
   }
@@ -264,7 +283,7 @@ async function handle(request) {
 
 if (import.meta.main) {
   Bun.serve({
-    hostname: "127.0.0.1",
+    hostname: HOST,
     port: PORT,
     async fetch(request) {
       try {
@@ -276,5 +295,5 @@ if (import.meta.main) {
       }
     },
   });
-  process.stdout.write(`FlightSweeper Solana demo listening on http://127.0.0.1:${PORT}\n`);
+  process.stdout.write(`FlightSweeper Solana demo listening on http://${HOST}:${PORT}\n`);
 }
