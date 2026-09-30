@@ -78,3 +78,17 @@ test("x402 recovery requires the invoice memo and the same token transfer", () =
   expect(verifiedPayer(paid, { recipient, memo })).toBe(payer);
   expect(() => verifiedPayer(paid, { recipient, memo: "fee_other" })).toThrow(PaymentMismatch);
 });
+
+test("x402 recovery rejects a duplicated memo", () => {
+  const memo = "fee_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const paid = transaction();
+  const instruction = { programId: "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr", parsed: memo };
+  paid.transaction.message.instructions.push(instruction, instruction);
+  expect(() => verifiedPayer(paid, { recipient, memo })).toThrow(PaymentMismatch);
+});
+
+test("payer source must be debited by the fee", () => {
+  const undebited = transaction();
+  undebited.meta.postTokenBalances[1].uiTokenAmount.amount = "19990000";
+  expect(() => verifiedPayer(undebited, { recipient, reference })).toThrow(PaymentMismatch);
+});

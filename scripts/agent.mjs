@@ -28,7 +28,8 @@ if (process.argv.includes("--x402")) {
   } else if (!result.ok) {
     throw new Error(`x402 request: HTTP ${result.status} ${(await result.json()).error}`);
   } else {
-    process.stdout.write("x402 route returned the existing settled receipt.\n");
+    invoice = await result.json();
+    process.stdout.write(`x402 route returned a ${invoice.status} receipt:\n${JSON.stringify(invoice, null, 2)}\n`);
   }
 }
 if (invoice.status !== "settled" && process.argv.includes("--watch")) {

@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="utf-8">
@@ -8,7 +8,6 @@
     <title>FlightSweeper Solana · Agent fee demo</title>
     <link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/style.css">
-    <script src="/app.js" defer></script>
   </head>
   <body>
     <header class="site-header shell">
@@ -25,7 +24,7 @@
           <h1 id="hero-title">A booking is&nbsp;confirmed.<br><em>Then the agent&nbsp;pays.</em></h1>
           <p class="lead">After a Duffel test order is ticketed, an agent pays <strong>0.01 test USDC on Solana Devnet</strong> and receives a verifiable receipt.</p>
           <div class="hero-actions">
-            <a class="button button-primary" href="#console">Try the agent API <span aria-hidden="true">↗</span></a>
+            <a class="button button-primary" href="#video">Watch the demo <span aria-hidden="true">↓</span></a>
             <a class="button button-ghost" href="#proof">See the records <span aria-hidden="true">↓</span></a>
           </div>
         </div>
@@ -52,34 +51,27 @@
           </a>
           <a class="proof-row" href="https://explorer.solana.com/tx/5L4S8miXMB3qhiqvbtbCWAqWULhRw5h7wNT9CPy9LZHjGmCBGw2NPHwqFoJRsedrmrZWsPhTPzDZjZeapen3kAYA?cluster=devnet" target="_blank" rel="noopener noreferrer">
             <img class="solana-mark" src="/solana-mark.svg" alt="Solana">
-            <span><small>5L4S8…kAYA</small><strong>Solana Devnet transfer</strong></span>
+            <span><small>5L4S8…kAYA</small><strong>Solana Pay transfer</strong></span>
+            <span class="proof-link" aria-hidden="true"><b>↗</b></span>
+          </a>
+          <a class="proof-row" href="https://explorer.solana.com/tx/5pqrQJZm3T5y2oMvwvun4x6YPHmKAanJMfXQ2rSP9vdGsXVuoVCqDDuFYwcm1aQ8AaEtAzAgEGVxopS1ythH4rgJ?cluster=devnet" target="_blank" rel="noopener noreferrer">
+            <img class="solana-mark" src="/solana-mark.svg" alt="Solana">
+            <span><small>5pqrQ…4rgJ</small><strong>x402 V2 payment</strong></span>
+            <span class="proof-link" aria-hidden="true"><b>↗</b></span>
+          </a>
+          <a class="proof-row" href="https://explorer.solana.com/tx/pYJY1RxR1opP6BJXLeCaujx1GgH3RL14GZLDyRfPFB3KnoZaR5H3vRp8VAqP4n8ZsGrGdN1W7Xek4ydzgiWxDza?cluster=devnet" target="_blank" rel="noopener noreferrer">
+            <img class="solana-mark" src="/solana-mark.svg" alt="Solana">
+            <span><small>pYJY1…xDza</small><strong>x402 payment recovered after retry</strong></span>
             <span class="proof-link" aria-hidden="true"><b>↗</b></span>
           </a>
         </div>
         <p class="boundary">The agent fee is separate from traveler approval and airfare payment.</p>
       </section>
 
-      <section class="console-section" id="console" aria-labelledby="console-title">
-        <div class="shell console-layout">
-          <div class="console-intro"><h2 id="console-title">Try the API.</h2><p>Enter an agent API token to create an invoice for a Duffel test order.</p><div class="console-note"><strong>Before you pay</strong><span>Use a Devnet wallet. If confirmation is pending, check the same invoice before paying again.</span></div></div>
-          <div class="console-panel">
-            <form id="invoice-form">
-              <label for="api-token">Agent API token</label>
-              <input id="api-token" type="password" autocomplete="off" required placeholder="Paste your local demo token">
-              <div class="form-row">
-                <div><label for="order-id">Duffel test order ID</label><input id="order-id" type="text" required value="ord_0000BAwfWWEr8QxS99s9Nb" spellcheck="false"></div>
-                <div><label for="idempotency-key">Idempotency key</label><input id="idempotency-key" type="text" required spellcheck="false" aria-describedby="key-help"><small id="key-help">Keep this key for safe retries.</small></div>
-              </div>
-              <div class="console-actions"><button class="button button-primary" type="submit">Create or retry invoice <span aria-hidden="true">→</span></button><button class="button button-outline" type="button" id="refresh-button" disabled>Check receipt</button><button class="button button-outline" type="button" id="x402-button" disabled>View x402 terms</button></div>
-            </form>
-            <p id="console-message" class="console-message" role="status" aria-live="polite">The API token is never saved by this page.</p>
-            <div id="payment-action" class="payment-action" hidden><span>Payment request is ready. Open it only with a Devnet wallet.</span><a id="payment-link" class="button button-outline" href="#console">Open Solana Pay URL ↗</a></div>
-            <form id="settle-form" class="settle-form" hidden><label for="signature">Already sent the transfer? Submit its signature.</label><div class="signature-row"><input id="signature" type="text" required spellcheck="false" placeholder="Solana transaction signature"><button class="button button-outline" type="submit">Verify</button></div></form>
-            <pre id="api-output" class="api-output" role="region" aria-label="Agent API response">{
-  "status": "waiting_for_request"
-}</pre>
-          </div>
-        </div>
+      <section class="video-section shell" id="video" aria-labelledby="video-title">
+        <h2 id="video-title">Watch the demo</h2>
+        <video class="demo-video" controls preload="metadata" src="/demo.mp4">Your browser cannot play this video. <a href="/demo.mp4">Download the demo video</a>.</video>
+        <p class="boundary"><a class="text-link" href="/demo-transcript.txt">Read the narration transcript</a>. The video uses an existing Duffel test order and Devnet test tokens.</p>
       </section>
     </main>
 

@@ -1,0 +1,17 @@
+1. FlightSweeper demonstrates how an agent can pay a booking service only after the booking outcome is confirmed. Once a Duffel test order is paid and ticketed, a separate agent fee settles through x four oh two on Solana Devnet. Here is the recorded run.
+
+2. First, the agent submits an existing Duffel test order. FlightSweeper checks it with Duffel and rejects anything live, unpaid, unticketed, or cancelled. The recorded booking reference is seven J U Q C E. This standalone demo does not create that airline order.
+
+3. The traveler approves the trip and pays airfare through the booking flow. The agent pays FlightSweeper's separate one cent service fee from its own wallet. The fee cannot replace traveler approval or pay the airline.
+
+4. The agent calls post invoices with its API token, order ID, and idempotency key. FlightSweeper creates one invoice. Retrying that key returns the same invoice. A different key for the same order is rejected, so a network retry cannot mint another charge.
+
+5. An unpaid invoice answers the x four oh two endpoint with HTTP four oh two and a standard version two payment required header. The terms name Solana Devnet, the exact scheme, ten thousand base units of Devnet U S D C, the recipient, and this invoice memo.
+
+6. Before signing, the demo client checks the network, token mint, amount, recipient, and memo against its local payment policy. It retries with a payment signature header. The wallet seed stays with the client. The facilitator settles, and FlightSweeper verifies the confirmed transfer.
+
+7. This is the public Devnet transaction from the recorded x four oh two run. It moves point zero one test U S D C from the agent to FlightSweeper. The memo contains the invoice ID. The transfer and memo are both visible on Solana Explorer.
+
+8. A second request returns the same settled receipt, with no new payment challenge. If settlement succeeds but its response disappears, FlightSweeper marks the outcome unknown and blocks another payment. It can recover the receipt from the confirmed transaction and invoice memo. We tested that path separately.
+
+9. The result is a verified service-fee receipt after a confirmed booking, with a bounded price and safe retry behavior. This recording uses an existing Duffel test order and Solana Devnet test tokens. Real airfare and traveler approval stay in their separate flow.

@@ -22,7 +22,7 @@ const PORT = Number(process.env.PORT ?? 8787);
 const HOST = process.env.HOST ?? "127.0.0.1";
 const DB_PATH = process.env.DB_PATH ?? ".data/invoices.sqlite";
 const RPC_URL = "https://api.devnet.solana.com";
-const X402_NETWORK = "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1";
+const X402_NETWORK = `solana:${DEVNET_GENESIS.slice(0, 32)}`;
 const x402Server = registerExactSvmScheme(new x402ResourceServer(new HTTPFacilitatorClient({ timeoutMs: 8_000 })));
 let x402Ready;
 
@@ -65,8 +65,9 @@ function response(body, status = 200) {
 }
 
 function authenticated(request) {
-  const supplied = request.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
-  const left = Buffer.from(supplied);
+  const header = request.headers.get("authorization") ?? "";
+  if (!header.startsWith("Bearer ")) return false;
+  const left = Buffer.from(header.slice(7));
   const right = Buffer.from(AGENT_TOKEN);
   return left.length === right.length && timingSafeEqual(left, right);
 }
@@ -107,6 +108,10 @@ async function rpc(method, params = []) {
   }
 }
 
+async function assertDevnet() {
+  if ((await rpc("getGenesisHash")) !== DEVNET_GENESIS) throw new ApiError(503, "wrong_solana_network");
+}
+
 async function confirmedTestOrder(orderId) {
   let result;
   try {
@@ -135,6 +140,17 @@ async function confirmedTestOrder(orderId) {
 
 function invoice(id) {
   return db.query("SELECT * FROM invoices WHERE id = ?").get(id);
+}
+
+function settle(row, payment) {
+  try {
+    db.query("UPDATE invoices SET signature = ?, payer = ?, settled_at = ?, x402_pending_at = NULL WHERE id = ? AND signature IS NULL").run(
+      payment.signature, payment.payer, new Date().toISOString(), row.id,
+    );
+  } catch {
+    throw new ApiError(409, "transaction_already_used");
+  }
+  return invoice(row.id);
 }
 
 function receipt(row, status = row.signature ? "settled" : row.x402_pending_at ? "payment_outcome_unknown" : "awaiting_payment") {
@@ -172,7 +188,7 @@ async function createInvoice(request) {
   }
 
   await confirmedTestOrder(input.orderId);
-  if ((await rpc("getGenesisHash")) !== DEVNET_GENESIS) throw new ApiError(503, "wrong_solana_network");
+  await assertDevnet();
   const accounts = await rpc("getTokenAccountsByOwner", [
     RECIPIENT,
     { mint: DEVNET_USDC_MINT },
@@ -214,9 +230,7 @@ async function verifySignature(row, signature, x402 = false) {
 
 async function reconcile(row, submittedSignature) {
   if (row.signature) return receipt(row);
-  if ((await rpc("getGenesisHash")) !== DEVNET_GENESIS) {
-    throw new ApiError(503, "wrong_solana_network");
-  }
+  await assertDevnet();
   let payment;
   if (submittedSignature) {
     payment = await verifySignature(row, submittedSignature);
@@ -240,23 +254,13 @@ async function reconcile(row, submittedSignature) {
   }
   if (!payment) return receipt(row);
   if (payment === "pending_confirmation") return receipt(row, payment);
-  try {
-    db.query("UPDATE invoices SET signature = ?, payer = ?, settled_at = ? WHERE id = ? AND signature IS NULL").run(
-      payment.signature,
-      payment.payer,
-      new Date().toISOString(),
-      row.id,
-    );
-  } catch {
-    throw new ApiError(409, "transaction_already_used");
-  }
-  return receipt(invoice(row.id));
+  return receipt(settle(row, payment));
 }
 
 async function recoverX402(row, submittedSignature) {
   if (row.signature) return receipt(row);
   if (!row.x402_pending_at) throw new ApiError(409, "x402_recovery_not_pending");
-  if ((await rpc("getGenesisHash")) !== DEVNET_GENESIS) throw new ApiError(503, "wrong_solana_network");
+  await assertDevnet();
   let payment;
   if (submittedSignature) {
     payment = await verifySignature(row, submittedSignature, true);
@@ -265,7 +269,8 @@ async function recoverX402(row, submittedSignature) {
       encoding: "jsonParsed", commitment: "confirmed",
     }]);
     for (const account of accounts?.value ?? []) {
-      const candidates = await rpc("getSignaturesForAddress", [account.pubkey, { limit: 25, commitment: "confirmed" }]);
+      // ponytail: newest 200 per account; paginate with `before` if the recipient gets busier. POST /recover covers older payments.
+      const candidates = await rpc("getSignaturesForAddress", [account.pubkey, { limit: 200, commitment: "confirmed" }]);
       for (const candidate of candidates) {
         if (candidate.err) continue;
         try {
@@ -282,14 +287,7 @@ async function recoverX402(row, submittedSignature) {
     }
   }
   if (!payment || payment === "pending_confirmation") return receipt(row);
-  try {
-    db.query("UPDATE invoices SET signature = ?, payer = ?, settled_at = ?, x402_pending_at = NULL WHERE id = ? AND signature IS NULL").run(
-      payment.signature, payment.payer, new Date().toISOString(), row.id,
-    );
-  } catch {
-    throw new ApiError(409, "transaction_already_used");
-  }
-  return receipt(invoice(row.id));
+  return receipt(settle(row, payment));
 }
 
 async function x402Receipt(request, row) {
@@ -360,39 +358,41 @@ async function x402Receipt(request, row) {
   const verified = await verifySignature(row, settled.transaction, true);
   if (verified === "pending_confirmation") throw new ApiError(503, "x402_settlement_outcome_unknown");
   if (settled.payer && settled.payer !== verified.payer) throw new ApiError(409, "payment_mismatch");
-  try {
-    db.query("UPDATE invoices SET signature = ?, payer = ?, settled_at = ?, x402_pending_at = NULL WHERE id = ? AND signature IS NULL").run(
-      verified.signature,
-      verified.payer,
-      new Date().toISOString(),
-      row.id,
-    );
-  } catch {
-    throw new ApiError(409, "transaction_already_used");
-  }
-  return Response.json(receipt(invoice(row.id)), {
+  return Response.json(receipt(settle(row, verified)), {
     headers: { ...settled.headers, "Cache-Control": "no-store" },
   });
 }
 
+const assets = {
+  "/": ["../web/index.html", "text/html; charset=utf-8"],
+  "/style.css": ["../web/style.css", "text/css; charset=utf-8"],
+  "/logo-mark.svg": ["../web/logo-mark.svg", "image/svg+xml"],
+  "/duffel-logo.svg": ["../web/duffel-logo.svg", "image/svg+xml"],
+  "/solana-mark.svg": ["../web/solana-mark.svg", "image/svg+xml"],
+  "/hero-bg-generated.avif": ["../web/hero-bg-generated.avif", "image/avif"],
+  "/demo.mp4": ["../web/demo.mp4", "video/mp4"],
+  "/demo-transcript.txt": ["../web/demo-transcript.txt", "text/plain; charset=utf-8"],
+};
+
 export async function handle(request) {
   const url = new URL(request.url);
-  const assets = {
-    "/": ["../web/index.html", "text/html; charset=utf-8"],
-    "/app.js": ["../web/app.js", "text/javascript; charset=utf-8"],
-    "/style.css": ["../web/style.css", "text/css; charset=utf-8"],
-    "/logo-mark.svg": ["../web/logo-mark.svg", "image/svg+xml"],
-    "/duffel-logo.svg": ["../web/duffel-logo.svg", "image/svg+xml"],
-    "/solana-mark.svg": ["../web/solana-mark.svg", "image/svg+xml"],
-    "/hero-bg-generated.avif": ["../web/hero-bg-generated.avif", "image/avif"],
-  };
   if (request.method === "GET" && assets[url.pathname]) {
     const [path, contentType] = assets[url.pathname];
-    return new Response(Bun.file(new URL(path, import.meta.url)), {
+    let file = Bun.file(new URL(path, import.meta.url));
+    const size = file.size;
+    const range = /^bytes=(\d+)-(\d*)$/.exec(request.headers.get("Range") ?? "");
+    const start = range ? Number(range[1]) : 0;
+    const end = range?.[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+    if (range && start > end) return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${size}` } });
+    if (range) file = file.slice(start, end + 1);
+    return new Response(file, {
+      status: range ? 206 : 200,
       headers: {
+        "Accept-Ranges": "bytes",
+        ...(range && { "Content-Range": `bytes ${start}-${end}/${size}` }),
         "Content-Type": contentType,
         "Cache-Control": "no-store",
-        "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'",
+        "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; media-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'",
         "X-Content-Type-Options": "nosniff",
         "Referrer-Policy": "no-referrer",
       },
@@ -407,7 +407,10 @@ export async function handle(request) {
   if (!match) throw new ApiError(404, "not_found");
   const row = invoice(match[1]);
   if (!row) throw new ApiError(404, "not_found");
-  if (request.method === "GET" && !match[2]) return response(row.x402_pending_at ? await recoverX402(row) : await reconcile(row));
+  if (request.method === "GET" && !match[2]) {
+    const current = row.x402_pending_at ? await recoverX402(row) : null;
+    return response(current?.status === "settled" ? current : await reconcile(invoice(row.id)));
+  }
   if (request.method === "GET" && match[2] === "x402") return x402Receipt(request, row);
   if (request.method === "POST" && match[2] === "recover") {
     const input = await bodyJson(request);

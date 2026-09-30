@@ -14,6 +14,30 @@ process.env.DUFFEL_TEST_TOKEN = "duffel_test_fixture";
 process.env.AGENT_API_TOKEN = token;
 process.env.FEE_RECIPIENT = recipient;
 process.env.DB_PATH = path;
+const payer = "7ZPJhZfjtNxZBVgP7YAFhBPpQ8QCkaQ9HDVNTM5FXXQv";
+const recoverySignature = "5".repeat(88);
+const balance = (accountIndex, owner, amount) => ({
+  accountIndex, owner, mint: DEVNET_USDC_MINT, uiTokenAmount: { amount: String(amount), decimals: 6 },
+});
+const recoveryTransaction = {
+  meta: {
+    err: null,
+    preTokenBalances: [balance(1, recipient, 0), balance(2, payer, 20_000)],
+    postTokenBalances: [balance(1, recipient, 10_000), balance(2, payer, 10_000)],
+  },
+  transaction: {
+    signatures: [recoverySignature],
+    message: {
+      accountKeys: [{ pubkey: payer }, { pubkey: "recipient-ata" }, { pubkey: "payer-ata" }],
+      instructions: [
+        { program: "spl-token", parsed: { type: "transferChecked", info: {
+          source: "payer-ata", destination: "recipient-ata", mint: DEVNET_USDC_MINT, tokenAmount: { amount: "10000" },
+        } } },
+        { programId: "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr", parsed: invoiceId },
+      ],
+    },
+  },
+};
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async (url, options) => {
   if (String(url).endsWith("/supported")) return Response.json({
@@ -22,7 +46,8 @@ globalThis.fetch = async (url, options) => {
   });
   if (String(url) === "https://api.devnet.solana.com") {
     const { method } = JSON.parse(options.body);
-    return Response.json({ jsonrpc: "2.0", result: method === "getGenesisHash" ? DEVNET_GENESIS : [], id: 1 });
+    const result = method === "getGenesisHash" ? DEVNET_GENESIS : method === "getTransaction" ? recoveryTransaction : [];
+    return Response.json({ jsonrpc: "2.0", result, id: 1 });
   }
   throw new Error(`Unexpected fetch: ${url}`);
 };
@@ -63,4 +88,30 @@ test("x402 challenge names the exact invoice fee; settled retry returns its rece
   expect(paid.status).toBe(200);
   expect(paid.headers.get("PAYMENT-REQUIRED")).toBeNull();
   expect(await paid.json()).toMatchObject({ status: "settled", transactionSignature: "fixture-transaction" });
+});
+
+test("bearer prefix is required", async () => {
+  const bare = new Request(`http://127.0.0.1:8787/invoices/${invoiceId}`, { headers: { Authorization: token } });
+  await expect(handle(bare)).rejects.toMatchObject({ code: "unauthorized" });
+});
+
+test("recover settles a pending x402 invoice from a submitted signature", async () => {
+  db.query("UPDATE invoices SET signature = NULL, payer = NULL, settled_at = NULL, x402_pending_at = ? WHERE id = ?").run(
+    new Date().toISOString(), invoiceId,
+  );
+  const recovered = await handle(new Request(`http://127.0.0.1:8787/invoices/${invoiceId}/recover`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ signature: recoverySignature }),
+  }));
+  expect(await recovered.json()).toMatchObject({ status: "settled", transactionSignature: recoverySignature, payer });
+  expect(db.query("SELECT x402_pending_at FROM invoices WHERE id = ?").get(invoiceId).x402_pending_at).toBeNull();
+});
+
+test("serves video byte ranges for Safari playback", async () => {
+  const part = await handle(new Request("http://localhost/demo.mp4", { headers: { Range: "bytes=0-99" } }));
+  expect(part.status).toBe(206);
+  expect(part.headers.get("Content-Range")).toMatch(/^bytes 0-99\/\d+$/);
+  expect((await part.arrayBuffer()).byteLength).toBe(100);
+  expect((await handle(new Request("http://localhost/demo.mp4", { headers: { Range: "bytes=999999999-" } }))).status).toBe(416);
 });

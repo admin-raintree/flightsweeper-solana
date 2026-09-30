@@ -9,15 +9,11 @@
 html { scroll-behavior: smooth; }
 body { margin: 0; overflow-x: clip; background: #fbf6ec; }
 a { color: inherit; text-decoration: none; }
-button, input { font: inherit; }
-button { cursor: pointer; }
-button:disabled { cursor: not-allowed; opacity: .45; }
-input { min-width: 0; }
 :focus-visible { outline: 2px solid #7a531a; outline-offset: 3px; }
 .shell { width: min(1120px, calc(100% - 48px)); margin-inline: auto; }
 h1, h2, p { margin-top: 0; }
 h1, h2 { font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif; font-weight: 600; letter-spacing: -.035em; text-wrap: balance; }
-p, .console-note span, .proof-link, .payment-action span, .settle-form label, .form-row small { text-wrap: pretty; }
+p, .proof-link { text-wrap: pretty; }
 .site-header {
   position: relative;
   z-index: 2;
@@ -95,11 +91,11 @@ h1 em { font-style: italic; }
   font-weight: 700;
   transition: background .2s, border-color .2s, transform .2s;
 }
-.button:not(:disabled):hover { transform: translateY(-2px); }
+.button:hover { transform: translateY(-2px); }
 .button-primary { color: #fbf6ec; background: #2a241f; }
-.button-primary:not(:disabled):hover { background: #473b31; }
-.button-ghost, .button-outline { color: #2a241f; border-color: #d9cfc4; background: #fffcf5c9; }
-.button-ghost:hover, .button-outline:hover { border-color: #7a531a; background: #fffdf8; }
+.button-primary:hover { background: #473b31; }
+.button-ghost { color: #2a241f; border-color: #d9cfc4; background: #fffcf5c9; }
+.button-ghost:hover { border-color: #7a531a; background: #fffdf8; }
 .duffel-logo { display: block; width: 83px; height: auto; }
 .solana-mark { display: block; width: 25px; height: 25px; }
 .receipt-card {
@@ -124,7 +120,7 @@ h1 em { font-style: italic; }
 .receipt-details dt { color: #a89a87; }
 .receipt-details dd { margin: 0; font-weight: 600; text-align: end; }
 .mono { font-family: "SFMono-Regular", Menlo, monospace; font-size: .75rem; }
-.proof-section h2, .console-intro h2 { margin: 0; font-size: clamp(2.5rem, 4vw, 3.5rem); line-height: 1.02; }
+.proof-section h2 { margin: 0; font-size: clamp(2.5rem, 4vw, 3.5rem); line-height: 1.02; }
 .proof-section { padding-top: 95px; padding-bottom: 95px; }
 .proof-ledger { margin-top: 35px; border-top: 1px solid #d9cfc4; }
 .proof-row { display: grid; grid-template-columns: 150px minmax(0, 1fr) 180px; align-items: center; gap: 24px; min-height: 128px; padding: 22px 0; border-bottom: 1px solid #d9cfc4; }
@@ -136,38 +132,15 @@ h1 em { font-style: italic; }
 .proof-link { color: #6a5948; font-size: .75rem; text-align: right; }
 .proof-link b { margin-left: 8px; color: #7a531a; font-size: 1.125rem; font-weight: 400; }
 .boundary { max-width: 780px; margin: 27px 0 0; color: #6a5948; font-size: .8125rem; line-height: 1.7; }
-.console-section { padding: 100px 0 110px; color: #f4ecdc; background: #2a241f; }
-.console-layout { display: grid; grid-template-columns: .8fr 1.2fr; gap: 65px; align-items: start; }
-.console-intro h2 { margin-bottom: 17px; }
-.console-intro p { color: #d2c5b3; font-size: .9375rem; line-height: 1.75; }
-.console-note { display: flex; flex-direction: column; gap: 8px; margin-top: 32px; padding: 18px; border: 1px solid #685949; border-radius: 10px; color: #d2c5b3; font-size: .75rem; line-height: 1.7; }
-.console-note strong { color: #fff7e8; font-size: .8125rem; }
-.console-panel { padding: 27px; border: 1px solid #776753; border-radius: 14px; background: #342d27; box-shadow: 0 22px 50px #120d092e; }
-.console-panel label { display: block; margin-bottom: 8px; color: #f4ecdc; font-size: .75rem; font-weight: 700; }
-.console-panel input { width: 100%; padding: 13px 14px; border: 1px solid #746553; border-radius: 7px; color: #fffaf0; background: #211c18; font-size: .75rem; }
-.console-panel input:focus { border-color: #e8d4a8; box-shadow: 0 0 0 3px #d8b58233; }
-.console-panel input::placeholder { color: #b2a28f; }
-.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 19px; }
-.form-row small { display: block; margin-top: 7px; color: #c5b5a0; font-size: .75rem; }
-.console-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
-.console-panel .button-primary { color: #2a241f; background: #d8b582; }
-.console-panel .button-primary:hover { background: #e3c58f; }
-.console-panel .button-outline { color: #f4ecdc; border-color: #81715d; background: transparent; }
-.console-panel .button-outline:hover { border-color: #d8b582; background: #493d31; }
-.console-message { min-height: 18px; margin: 22px 0 15px; color: #ddbf8d; font-size: .75rem; }
-.api-output { min-height: 110px; max-height: 390px; overflow: auto; overflow-wrap: anywhere; margin: 0; padding: 20px; border: 1px solid #655646; border-radius: 8px; color: #e8d4a8; background: #211c18; font: .75rem/1.7 "SFMono-Regular", Menlo, monospace; white-space: pre-wrap; }
-.payment-action { margin: 16px 0; padding: 15px; border: 1px solid #607753; border-radius: 8px; color: #d8e8c9; background: #34402e; font-size: .75rem; line-height: 1.6; }
-.payment-action .button { margin-top: 12px; }
-.settle-form { margin: 20px 0; }
-.signature-row { display: flex; gap: 8px; }
-.signature-row .button { flex: none; }
+.video-section { padding-bottom: 95px; }
+.video-section h2 { margin: 0 0 35px; font-size: clamp(2.5rem, 4vw, 3.5rem); line-height: 1.02; }
+.demo-video { display: block; width: 100%; aspect-ratio: 16 / 9; border-radius: 16px; background: #211c18; box-shadow: 0 28px 55px #1f160e35; }
+.text-link { color: #7a531a; text-decoration: underline; text-underline-offset: 3px; }
 .site-footer { display: flex; align-items: center; justify-content: space-between; gap: 20px; min-height: 145px; border-top: 1px solid #d9cfc4; }
 .site-footer p { margin: 0; color: #7a6a58; font-size: .75rem; line-height: 1.6; }
 @media (max-width: 950px) {
   .hero { grid-template-columns: 1fr; gap: 44px; padding-top: 80px; }
   .receipt-card { width: min(100%, 520px); }
-  .console-layout { grid-template-columns: 1fr; gap: 30px; }
-  .console-intro { max-width: 670px; }
 }
 @media (max-width: 650px) {
   .shell { width: min(100% - 32px, 560px); }
@@ -182,12 +155,9 @@ h1 em { font-style: italic; }
   .hero-actions { align-items: stretch; flex-direction: column; }
   .receipt-card { padding: 22px 21px; }
   .receipt-amount span { font-size: 3.5625rem; }
-  .proof-section, .console-section { padding-top: 70px; padding-bottom: 75px; }
+  .proof-section, .video-section { padding-top: 70px; padding-bottom: 75px; }
   .proof-row { grid-template-columns: 1fr; gap: 12px; }
   .proof-link { text-align: left; }
-  .form-row { grid-template-columns: 1fr; }
-  .console-panel { padding: 18px; }
-  .signature-row { flex-direction: column; }
   .site-footer { align-items: flex-start; flex-direction: column; padding-block: 27px; }
 }
 @media (prefers-reduced-motion: reduce) {
