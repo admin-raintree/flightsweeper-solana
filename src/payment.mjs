@@ -47,7 +47,7 @@ export function paymentUrl(recipient, reference) {
   return `solana:${recipient}?${params}`;
 }
 
-export function verifiedPayer(transaction, { recipient, reference }) {
+export function verifiedPayer(transaction, { recipient, reference, memo }) {
   const keys = transaction?.transaction?.message?.accountKeys;
   const instructions = transaction?.transaction?.message?.instructions;
   const before = transaction?.meta?.preTokenBalances;
@@ -56,7 +56,9 @@ export function verifiedPayer(transaction, { recipient, reference }) {
     transaction?.meta?.err !== null ||
     !Array.isArray(keys) ||
     !Array.isArray(instructions) ||
-    !keys.some((key) => key.pubkey === reference && key.signer === false && key.writable === false) ||
+    !(memo
+      ? instructions.filter((instruction) => instruction.programId === "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr" && instruction.parsed === memo).length === 1
+      : keys.some((key) => key.pubkey === reference && key.signer === false && key.writable === false)) ||
     !Array.isArray(before) ||
     !Array.isArray(after)
   ) {

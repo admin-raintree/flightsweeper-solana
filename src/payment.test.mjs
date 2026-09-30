@@ -66,3 +66,15 @@ test("payer must own the source account for the recipient transfer", () => {
   unrelatedDebit.transaction.message.instructions[0].parsed.info.source = "other-account";
   expect(() => verifiedPayer(unrelatedDebit, { recipient, reference })).toThrow(PaymentMismatch);
 });
+
+test("x402 recovery requires the invoice memo and the same token transfer", () => {
+  const memo = "fee_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const paid = transaction();
+  paid.transaction.message.accountKeys.pop();
+  paid.transaction.message.instructions.push({
+    programId: "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
+    parsed: memo,
+  });
+  expect(verifiedPayer(paid, { recipient, memo })).toBe(payer);
+  expect(() => verifiedPayer(paid, { recipient, memo: "fee_other" })).toThrow(PaymentMismatch);
+});

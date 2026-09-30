@@ -2,6 +2,8 @@ import { randomUUID, timingSafeEqual } from "node:crypto";
 import { chmodSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { Database } from "bun:sqlite";
+import { HTTPFacilitatorClient, x402HTTPResourceServer, x402ResourceServer } from "@x402/core/server";
+import { registerExactSvmScheme } from "@x402/svm/exact/server";
 import {
   AMOUNT_BASE_UNITS,
   DEVNET_GENESIS,
@@ -20,6 +22,9 @@ const PORT = Number(process.env.PORT ?? 8787);
 const HOST = process.env.HOST ?? "127.0.0.1";
 const DB_PATH = process.env.DB_PATH ?? ".data/invoices.sqlite";
 const RPC_URL = "https://api.devnet.solana.com";
+const X402_NETWORK = "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1";
+const x402Server = registerExactSvmScheme(new x402ResourceServer(new HTTPFacilitatorClient({ timeoutMs: 8_000 })));
+let x402Ready;
 
 if (!DUFFEL_TOKEN?.startsWith("duffel_test_")) throw new Error("DUFFEL_TEST_TOKEN must be a Duffel test token");
 if (!AGENT_TOKEN || AGENT_TOKEN.length < 32) throw new Error("AGENT_API_TOKEN must have at least 32 characters");
@@ -40,8 +45,12 @@ db.run(`CREATE TABLE IF NOT EXISTS invoices (
   created_at TEXT NOT NULL,
   signature TEXT UNIQUE,
   payer TEXT,
-  settled_at TEXT
+  settled_at TEXT,
+  x402_pending_at TEXT
 )`);
+if (!db.query("PRAGMA table_info(invoices)").all().some((column) => column.name === "x402_pending_at")) {
+  db.run("ALTER TABLE invoices ADD COLUMN x402_pending_at TEXT");
+}
 
 class ApiError extends Error {
   constructor(status, code) {
@@ -128,7 +137,7 @@ function invoice(id) {
   return db.query("SELECT * FROM invoices WHERE id = ?").get(id);
 }
 
-function receipt(row, status = row.signature ? "settled" : "awaiting_payment") {
+function receipt(row, status = row.signature ? "settled" : row.x402_pending_at ? "payment_outcome_unknown" : "awaiting_payment") {
   return {
     invoiceId: row.id,
     orderId: row.order_id,
@@ -184,7 +193,7 @@ async function createInvoice(request) {
   return response(receipt(row), 201);
 }
 
-async function verifySignature(row, signature) {
+async function verifySignature(row, signature, x402 = false) {
   if (typeof signature !== "string" || !/^[1-9A-HJ-NP-Za-km-z]{64,88}$/.test(signature)) {
     throw new ApiError(400, "invalid_signature");
   }
@@ -196,7 +205,7 @@ async function verifySignature(row, signature) {
   if (!transaction) return "pending_confirmation";
   try {
     if (!transaction.transaction?.signatures?.includes(signature)) throw new PaymentMismatch("Signature differs");
-    return { signature, payer: verifiedPayer(transaction, row) };
+    return { signature, payer: verifiedPayer(transaction, x402 ? { recipient: row.recipient, memo: row.id } : row) };
   } catch (error) {
     if (error instanceof PaymentMismatch) throw new ApiError(409, "payment_mismatch");
     throw error;
@@ -244,7 +253,129 @@ async function reconcile(row, submittedSignature) {
   return receipt(invoice(row.id));
 }
 
-async function handle(request) {
+async function recoverX402(row, submittedSignature) {
+  if (row.signature) return receipt(row);
+  if (!row.x402_pending_at) throw new ApiError(409, "x402_recovery_not_pending");
+  if ((await rpc("getGenesisHash")) !== DEVNET_GENESIS) throw new ApiError(503, "wrong_solana_network");
+  let payment;
+  if (submittedSignature) {
+    payment = await verifySignature(row, submittedSignature, true);
+  } else {
+    const accounts = await rpc("getTokenAccountsByOwner", [row.recipient, { mint: DEVNET_USDC_MINT }, {
+      encoding: "jsonParsed", commitment: "confirmed",
+    }]);
+    for (const account of accounts?.value ?? []) {
+      const candidates = await rpc("getSignaturesForAddress", [account.pubkey, { limit: 25, commitment: "confirmed" }]);
+      for (const candidate of candidates) {
+        if (candidate.err) continue;
+        try {
+          const found = await verifySignature(row, candidate.signature, true);
+          if (found !== "pending_confirmation") {
+            payment = found;
+            break;
+          }
+        } catch (error) {
+          if (!(error instanceof ApiError && error.code === "payment_mismatch")) throw error;
+        }
+      }
+      if (payment) break;
+    }
+  }
+  if (!payment || payment === "pending_confirmation") return receipt(row);
+  try {
+    db.query("UPDATE invoices SET signature = ?, payer = ?, settled_at = ?, x402_pending_at = NULL WHERE id = ? AND signature IS NULL").run(
+      payment.signature, payment.payer, new Date().toISOString(), row.id,
+    );
+  } catch {
+    throw new ApiError(409, "transaction_already_used");
+  }
+  return receipt(invoice(row.id));
+}
+
+async function x402Receipt(request, row) {
+  if (row.signature) return response(receipt(row));
+  if (row.x402_pending_at) return response(await recoverX402(row));
+  const current = await reconcile(row);
+  if (current.status !== "awaiting_payment") return response(current);
+  if ((request.headers.get("payment-signature")?.length ?? 0) > 32_768) throw new ApiError(413, "payment_header_too_large");
+  try {
+    x402Ready ??= x402Server.initialize();
+    await x402Ready;
+  } catch {
+    x402Ready = undefined;
+    throw new ApiError(503, "x402_facilitator_unavailable");
+  }
+
+  const url = new URL(request.url);
+  const adapter = {
+    getHeader: (name) => request.headers.get(name) ?? undefined,
+    getMethod: () => request.method,
+    getPath: () => url.pathname,
+    getUrl: () => url.toString(),
+    getAcceptHeader: () => request.headers.get("accept") ?? "application/json",
+    getUserAgent: () => request.headers.get("user-agent") ?? "",
+  };
+  const context = { adapter, path: url.pathname, method: request.method };
+  const server = new x402HTTPResourceServer(x402Server, {
+    [`GET ${url.pathname}`]: {
+      accepts: {
+        scheme: "exact",
+        network: X402_NETWORK,
+        payTo: row.recipient,
+        price: { amount: String(AMOUNT_BASE_UNITS), asset: DEVNET_USDC_MINT },
+        extra: { memo: row.id },
+      },
+      description: "FlightSweeper confirmed-booking agent service fee (Duffel test, Solana Devnet)",
+      mimeType: "application/json",
+    },
+  });
+  const result = await server.processHTTPRequest(context);
+  if (result.type === "payment-error") {
+    const { status, headers, body } = result.response;
+    return new Response(typeof body === "string" ? body : JSON.stringify(body ?? {}), {
+      status,
+      headers: { ...headers, "Cache-Control": "no-store" },
+    });
+  }
+  if (result.type !== "payment-verified") throw new ApiError(500, "x402_route_unprotected");
+  const pending = db.query("UPDATE invoices SET x402_pending_at = ? WHERE id = ? AND signature IS NULL AND x402_pending_at IS NULL").run(
+    new Date().toISOString(), row.id,
+  );
+  if (pending.changes !== 1) return response(receipt(invoice(row.id)));
+  let settled;
+  try {
+    settled = await server.processSettlement(
+      result.paymentPayload,
+      result.paymentRequirements,
+      result.declaredExtensions,
+      { request: context },
+      undefined,
+      result.beforeHandlerSettlement,
+    );
+  } catch {
+    throw new ApiError(503, "x402_settlement_outcome_unknown");
+  }
+  if (!settled.success) throw new ApiError(503, "x402_settlement_outcome_unknown");
+  if (!settled.transaction) throw new ApiError(503, "x402_settlement_outcome_unknown");
+  const verified = await verifySignature(row, settled.transaction, true);
+  if (verified === "pending_confirmation") throw new ApiError(503, "x402_settlement_outcome_unknown");
+  if (settled.payer && settled.payer !== verified.payer) throw new ApiError(409, "payment_mismatch");
+  try {
+    db.query("UPDATE invoices SET signature = ?, payer = ?, settled_at = ?, x402_pending_at = NULL WHERE id = ? AND signature IS NULL").run(
+      verified.signature,
+      verified.payer,
+      new Date().toISOString(),
+      row.id,
+    );
+  } catch {
+    throw new ApiError(409, "transaction_already_used");
+  }
+  return Response.json(receipt(invoice(row.id)), {
+    headers: { ...settled.headers, "Cache-Control": "no-store" },
+  });
+}
+
+export async function handle(request) {
   const url = new URL(request.url);
   const assets = {
     "/": ["../web/index.html", "text/html; charset=utf-8"],
@@ -272,11 +403,17 @@ async function handle(request) {
   }
   if (!authenticated(request)) throw new ApiError(401, "unauthorized");
   if (url.pathname === "/invoices" && request.method === "POST") return createInvoice(request);
-  const match = /^\/invoices\/(fee_[0-9a-f-]+)(?:\/(settle))?$/.exec(url.pathname);
+  const match = /^\/invoices\/(fee_[0-9a-f-]+)(?:\/(settle|x402|recover))?$/.exec(url.pathname);
   if (!match) throw new ApiError(404, "not_found");
   const row = invoice(match[1]);
   if (!row) throw new ApiError(404, "not_found");
-  if (request.method === "GET" && !match[2]) return response(await reconcile(row));
+  if (request.method === "GET" && !match[2]) return response(row.x402_pending_at ? await recoverX402(row) : await reconcile(row));
+  if (request.method === "GET" && match[2] === "x402") return x402Receipt(request, row);
+  if (request.method === "POST" && match[2] === "recover") {
+    const input = await bodyJson(request);
+    if (!input || Object.keys(input).join() !== "signature") throw new ApiError(400, "invalid_request");
+    return response(await recoverX402(row, input.signature));
+  }
   if (request.method === "POST" && match[2] === "settle") {
     const input = await bodyJson(request);
     if (!input || Object.keys(input).join() !== "signature") throw new ApiError(400, "invalid_request");

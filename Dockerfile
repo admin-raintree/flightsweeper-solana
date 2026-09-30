@@ -1,6 +1,7 @@
 FROM oven/bun:1.3.11
 WORKDIR /app
-COPY package.json ./
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
 COPY src/ ./src/
 COPY web/ ./web/
 ENV HOST=0.0.0.0 DB_PATH=/data/invoices.sqlite

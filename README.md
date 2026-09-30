@@ -1,8 +1,8 @@
 # FlightSweeper Solana
 
-This standalone demo lets an agent pay a **0.01 Devnet USDC test-token service fee** after Duffel confirms a **test-mode** order. Its backend checks the order, issues a Solana Pay transfer request, verifies the Devnet payment, and returns a receipt that survives retries. The one-page website shows the recorded proof and provides a token-gated agent console. It does not create an airline order or handle traveler approval or airfare payment.
+This standalone demo lets an agent pay a **0.01 Devnet USDC test-token service fee** after Duffel confirms a **test-mode** order. The API offers both a Solana Pay transfer request and an x402 V2 payment challenge for one invoice. It verifies settlement and returns the same receipt on retry. The one-page website shows recorded proof and provides a token-gated agent console. Traveler approval and airfare payment remain separate.
 
-This was built for the [September 30, 2026 Agent Hackathon](https://luma.com/agent-hackathon). The event asks for a product, service, or API that an agent would buy. Its public page does not specify a required payment protocol, public repository, or judging rubric. This demo uses Solana Pay; it does not implement x402 or Pay.sh.
+This was built for the [September 30, 2026 Agent Hackathon](https://luma.com/agent-hackathon). The event asks for a product, service, or API that an agent would buy. Its public page does not specify a required payment protocol, public repository, or judging rubric. This demo uses Solana Pay and x402 V2; it does not use Pay.sh.
 
 ## What this repository contains
 
@@ -10,10 +10,11 @@ The agent pays a demonstration service fee after Duffel reports a paid, ticketed
 
 | File | Role |
 |---|---|
-| `src/server.mjs` | Local agent API, Duffel order check, invoice storage, and Devnet reconciliation. |
+| `src/server.mjs` | Local agent API, Duffel order check, invoice storage, x402 V2 settlement, and Devnet reconciliation. |
 | `src/payment.mjs` | Solana Pay URL and transaction verification rules. |
-| `scripts/agent.mjs` | Agent client that creates an invoice, reads its receipt, and checks retry behavior. |
-| `src/payment.test.mjs` | Checks for the reference, mint, amount, and payer. |
+| `scripts/agent.mjs` | Agent client that creates an invoice, reads its receipt, previews x402 terms, and checks retry behavior. |
+| `scripts/x402-agent.mjs` | Bounded Devnet payer that signs an x402 V2 payment with a local disposable wallet seed. |
+| `src/*.test.mjs` | Checks Solana Pay verification and the x402 V2 challenge and settled retry. |
 | `web/` | One-page website and agent console. No API token is embedded in the website; an operator enters one to make API calls. |
 
 The [Duffel logo](https://duffel.com/) and [Solana mark](https://solana.com/branding) in `web/` identify the two test services. Those marks belong to their owners and are excluded from this repository's MIT license. Their use does not imply endorsement.
@@ -26,15 +27,19 @@ sequenceDiagram
     participant API as FlightSweeper Solana API
     participant Duffel as Duffel test API
     participant Wallet as Agent Devnet wallet
+    participant Facilitator as x402 facilitator
     participant RPC as Solana Devnet RPC
     Agent->>API: POST /invoices (order ID, idempotency key)
     API->>Duffel: GET test order
     Duffel-->>API: Paid, ticketed, live_mode=false
-    API-->>Agent: 0.01 test USDC Solana Pay URL
-    Agent->>Wallet: Authorize bounded test-token transfer
-    Wallet->>RPC: Send transfer with invoice reference
-    Agent->>API: GET /invoices/{id}
-    API->>RPC: Verify reference, mint, recipient, amount, payer
+    API-->>Agent: Invoice and Solana Pay URL
+    Agent->>API: GET /invoices/{id}/x402
+    API-->>Agent: 402 with exact 0.01 test USDC terms
+    Agent->>Wallet: Sign bounded x402 payment
+    Agent->>API: Retry with PAYMENT-SIGNATURE
+    API->>Facilitator: Verify and settle signed payment
+    Facilitator->>RPC: Submit Devnet transaction
+    API->>RPC: Verify confirmed transfer and invoice memo
     API-->>Agent: Settled receipt and transaction signature
 ```
 
@@ -43,15 +48,17 @@ sequenceDiagram
 Prerequisites: [Bun 1.3+](https://bun.com/docs/installation), a `duffel_test_` token, a paid and ticketed [Duffel Airways (`ZZ`) test order](https://duffel.com/docs/api/overview/test-mode/duffel-airways), and two Devnet wallets. Fund the payer with test SOL and [Circle Devnet USDC](https://faucet.circle.com/). The recipient must have an associated token account for Circle's [Devnet USDC mint](https://developers.circle.com/stablecoins/usdc-contract-addresses), `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`. Keep wallet signing keys outside this server and the repository.
 
 1. Copy `.env.example` to `.env.local`, set its permissions to `600`, and fill in `DUFFEL_TEST_TOKEN`, a random `AGENT_API_TOKEN` of at least 32 characters, and `FEE_RECIPIENT`. Never commit `.env.local`.
-2. Run `bun run start`. Open `http://127.0.0.1:8787` for the website. The API binds to `127.0.0.1:8787` and stores invoices in the ignored `.data/invoices.sqlite` file. It has no package dependencies to install.
+2. Run `bun install --frozen-lockfile`, then `bun run start`. Open `http://127.0.0.1:8787` for the website. The API binds to `127.0.0.1:8787` and stores invoices in the ignored `.data/invoices.sqlite` file.
 3. In another terminal, set `AGENT_API_TOKEN` to the same local token and run `bun scripts/agent.mjs <Duffel test order ID> <UUID> --watch`. The agent client prints a `solana:` URL and polls for settlement for up to 30 seconds. Pay that URL with a wallet set to **Devnet**, or submit the transaction signature to `POST /invoices/{id}/settle`.
 4. Run the same agent command again. It returns the same invoice and transaction signature. It provides no second payment URL after settlement.
 
+For x402 V2, create an unpaid invoice with `bun scripts/agent.mjs <Duffel test order ID> <UUID> --x402`. The `--x402` option prints the official `PAYMENT-REQUIRED` terms without signing or paying. The website's **View x402 terms** control shows the same challenge. To make one Devnet payment, set `SOLANA_PAYER_SEED_FILE` to a disposable 32-byte seed file and run `bun scripts/x402-agent.mjs <Duffel test order ID> <same UUID>`. That client requires the exact Devnet network, USDC mint, 10,000 base units, configured recipient, and invoice memo before it signs. Run it again with the same UUID to read the settled receipt without a second payment; a settled replay does not need the seed. Keep the seed outside Git and use a dedicated test wallet.
+
 The Solana Pay URL does **not** select a cluster. Check that the wallet uses Devnet before sending. Devnet tokens have no real value and the network can reset.
 
-The included agent client creates invoices and reads receipts. It does not hold a wallet key or send a transfer. A separate bounded Devnet wallet sent the verified demo payment. An automated agent wallet can consume the same Solana Pay URL; its signing and spending policy remain outside this service.
+`scripts/agent.mjs` creates invoices and reads receipts without a wallet key. `scripts/x402-agent.mjs` reads a disposable wallet seed from the path you provide and signs only a payment that matches its fee policy. Keep production signing keys and spending limits outside this demo server.
 
-`bun test` runs the four local payment verification tests. The tests do not contact Duffel or Solana. A full payment demo also needs the credentials, test order, wallets, and network access listed above.
+`bun test` runs six local checks. They do not contact Duffel or Solana. The x402 test covers the V2 challenge, uncertain outcome, and settled retry; it does not simulate facilitator settlement. A full payment demo also needs the credentials, test order, wallet, and network access listed above.
 
 ## Deploy the sandbox
 
@@ -75,11 +82,15 @@ All `/invoices` requests require `Authorization: Bearer <AGENT_API_TOKEN>`.
 | Request | Result |
 |---|---|
 | `POST /invoices` with `{ "orderId": "ord_...", "idempotencyKey": "<UUID>" }` | Verifies the Duffel test order and creates one invoice. A repeated key returns the same invoice. A second key for the same order returns `409`. |
-| `GET /invoices/{invoiceId}` | Reconciles by the unique Solana Pay reference and returns `awaiting_payment`, `pending_confirmation`, or `settled`. |
+| `GET /invoices/{invoiceId}` | Reconciles the relevant payment path and returns `awaiting_payment`, `pending_confirmation`, `payment_outcome_unknown`, or `settled`. |
 | `POST /invoices/{invoiceId}/settle` with `{ "signature": "<Devnet signature>" }` | Verifies a submitted transaction and returns its receipt. |
+| `GET /invoices/{invoiceId}/x402` | Returns an x402 V2 `402` challenge with `PAYMENT-REQUIRED`. A signed retry with `PAYMENT-SIGNATURE` settles the fee and returns `PAYMENT-RESPONSE` plus the receipt. A settled invoice returns its existing receipt without another challenge. |
+| `POST /invoices/{invoiceId}/recover` with `{ "signature": "<Devnet signature>" }` | Recovers an uncertain x402 settlement from a confirmed transaction with the matching invoice memo, amount, mint, recipient, and payer. |
 | `GET /health` | Local health check. |
 
-The server checks the Devnet genesis hash and a confirmed transaction. Settlement requires the invoice reference, Devnet USDC mint, exact 10,000 base-unit increase in the recipient’s token balance, and one identifiable token payer. A settled invoice stores one signature. If RPC is unavailable or a submitted transaction is pending, **do not send another transfer**. Retry the status read or submit the original signature. The status read scans the ten most recent transactions for the reference; submit the signature if an older payment is missing from that scan.
+The server checks the Devnet genesis hash and a confirmed transaction. Solana Pay settlement requires the invoice reference, Devnet USDC mint, exact 10,000 base-unit increase in the recipient’s token balance, and one identifiable token payer. The x402 facilitator verifies the signed payload before settlement. A settled invoice stores one signature.
+
+If x402 settlement returns an uncertain result, the invoice becomes `payment_outcome_unknown` and stops offering payment terms. `GET /invoices/{invoiceId}` scans the 25 most recent confirmed transactions for the recipient's Devnet USDC token account and verifies the invoice memo and transfer. If the transaction is older, submit its signature to `/recover`. Do not sign or send a new payment while this status persists. If the facilitator rejected the transfer and no transaction exists, an operator must inspect the attempt before resetting that invoice; this demo has no automatic reset. Solana Pay status reads scan the ten most recent transactions for the reference; submit the original signature if an older payment is missing from that scan.
 
 The service binds to localhost, uses a single bearer token, and uses a public rate-limited RPC. It is a hackathon sandbox, not a production payment service. A live pilot needs tenant authorization, dedicated RPC, price and refund policy, operations, and a separate security review.
 
@@ -88,13 +99,16 @@ The service binds to localhost, uses a single bearer token, and uses a public ra
 - Duffel test order `ord_0000BAwfWWEr8QxS99s9Nb`, booking reference `7JUQCE`, was created with **Duffel test balance** outside this repository. The account owner can show it in the [Duffel test dashboard](https://app.duffel.com/flightbooker/test/orders/ord_0000BAwfWWEr8QxS99s9Nb).
 - This standalone API issued invoice `fee_61a97467-5d89-4d2b-ab1c-c9db4e4742ea` with idempotency key `55555555-5555-4555-8555-555555555555`, then settled it with [Devnet transaction `5L4S8...kAYA`](https://explorer.solana.com/tx/5L4S8miXMB3qhiqvbtbCWAqWULhRw5h7wNT9CPy9LZHjGmCBGw2NPHwqFoJRsedrmrZWsPhTPzDZjZeapen3kAYA?cluster=devnet). The invoice lives in ignored local SQLite state; a fresh clone cannot replay this receipt without that state and a Duffel test token.
 - A retry returned the same receipt and no payment URL. A second invoice for the same order returned `409`; an unauthenticated request returned `401`.
+- A separate fresh database issued x402 invoice `fee_efced8d0-e1f2-4c08-8a4e-384ca96dd5a7` for the same existing Duffel test order. The bounded agent client paid 0.01 Devnet USDC through x402 V2. The [Devnet x402 transaction `pYJY1...xDza`](https://explorer.solana.com/tx/pYJY1RxR1opP6BJXLeCaujx1GgH3RL14GZLDyRfPFB3KnoZaR5H3vRp8VAqP4n8ZsGrGdN1W7Xek4ydzgiWxDza?cluster=devnet) contains the invoice memo. A separate recovery database found that transaction and restored the receipt. The final verifier also settled invoice `fee_b1f27645-457b-4e15-8d6b-4c624a6e9c96` in [Devnet transaction `5pqrQ...4rgJ`](https://explorer.solana.com/tx/5pqrQJZm3T5y2oMvwvun4x6YPHmKAanJMfXQ2rSP9vdGsXVuoVCqDDuFYwcm1aQ8AaEtAzAgEGVxopS1ythH4rgJ?cluster=devnet). Its receipt is saved in ignored `.data/x402-demo.sqlite`; a retry returned it without a second charge. The website proof card shows the earlier Solana Pay run.
 - This proof uses a provider test order and Devnet tokens. It does **not** show FlightSweeper’s hosted traveler approval or airfare checkout end to end.
 
 ## Three-minute demo
 
-1. **0:00–0:45:** Show the Duffel dashboard’s `Test mode` and confirmed order `7JUQCE`.
-2. **0:45–1:45:** On the original demo machine, run `bun scripts/agent.mjs ord_0000BAwfWWEr8QxS99s9Nb 55555555-5555-4555-8555-555555555555`. Show the separate test-token receipt and Devnet transaction. This replay needs the original `.data/` state, a Duffel test token, and the local API token.
-3. **1:45–2:30:** Run it again. Show the identical invoice and signature, with no second payment URL.
-4. **2:30–3:00:** Explain the boundary: the agent pays only the service fee; traveler approval and airfare remain separate. State the hosted checkout limitation above.
+On the original demo machine, start two local API processes before presenting: `PORT=18794 DB_PATH=.data/x402-preview.sqlite bun run start` for an unpaid challenge, and `PORT=18790 DB_PATH=.data/x402-demo.sqlite bun run start` for the settled receipt. These ignored databases are not in a fresh clone. Both processes need the local `.env.local` credentials.
 
-Official references: [Duffel test mode](https://duffel.com/docs/api/overview/test-mode/duffel-airways), [Duffel order API](https://duffel.com/docs/api/v2/orders), [Solana Pay transfer requests](https://solana.com/docs/tools/solana-pay/quickstart/transfer-requests), [Solana RPC transaction verification](https://solana.com/docs/rpc/http/gettransaction), and [Solana Devnet](https://solana.com/docs/references/clusters).
+1. **0:00–0:45:** Show the Duffel dashboard’s `Test mode` and confirmed order `7JUQCE`.
+2. **0:45–1:45:** Run `API_BASE=http://127.0.0.1:18794 bun scripts/agent.mjs ord_0000BAwfWWEr8QxS99s9Nb bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb --x402`. Point to the 10,000 base-unit price, Devnet USDC mint, recipient, and invoice memo. The website's **View x402 terms** control shows the same data.
+3. **1:45–2:30:** Show the recorded [x402 Devnet transaction](https://explorer.solana.com/tx/5pqrQJZm3T5y2oMvwvun4x6YPHmKAanJMfXQ2rSP9vdGsXVuoVCqDDuFYwcm1aQ8AaEtAzAgEGVxopS1ythH4rgJ?cluster=devnet). On the demo machine, run `API_BASE=http://127.0.0.1:18790 bun scripts/x402-agent.mjs ord_0000BAwfWWEr8QxS99s9Nb aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa` against `.data/x402-demo.sqlite`. Show the identical receipt without another payment.
+4. **2:30–3:00:** Explain that the agent pays only the service fee; traveler approval and airfare remain separate. The demo uses a Duffel test order and Devnet test tokens.
+
+Official references: [Duffel test mode](https://duffel.com/docs/api/overview/test-mode/duffel-airways), [Duffel order API](https://duffel.com/docs/api/v2/orders), [Solana x402 V2](https://solana.com/docs/payments/agentic-payments/x402), [Solana Pay transfer requests](https://solana.com/docs/tools/solana-pay/quickstart/transfer-requests), and [Solana Devnet](https://solana.com/docs/references/clusters).

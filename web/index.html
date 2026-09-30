@@ -29,7 +29,7 @@
             <a class="button button-ghost" href="#proof">See the records <span aria-hidden="true">↓</span></a>
           </div>
         </div>
-        <div class="receipt-card" aria-label="Recorded demo receipt">
+        <div class="receipt-card" role="group" aria-label="Recorded demo receipt">
           <div class="receipt-top"><span class="receipt-heading">RECORDED RECEIPT</span><span class="receipt-status"><span aria-hidden="true">●</span> SETTLED</span></div>
           <div class="receipt-amount"><span>0.01</span><small>USDC test token</small></div>
           <div class="receipt-rule"></div>
@@ -70,12 +70,12 @@
                 <div><label for="order-id">Duffel test order ID</label><input id="order-id" type="text" required value="ord_0000BAwfWWEr8QxS99s9Nb" spellcheck="false"></div>
                 <div><label for="idempotency-key">Idempotency key</label><input id="idempotency-key" type="text" required spellcheck="false" aria-describedby="key-help"><small id="key-help">Keep this key for safe retries.</small></div>
               </div>
-              <div class="console-actions"><button class="button button-primary" type="submit">Create or retry invoice <span aria-hidden="true">→</span></button><button class="button button-outline" type="button" id="refresh-button" disabled>Check receipt</button></div>
+              <div class="console-actions"><button class="button button-primary" type="submit">Create or retry invoice <span aria-hidden="true">→</span></button><button class="button button-outline" type="button" id="refresh-button" disabled>Check receipt</button><button class="button button-outline" type="button" id="x402-button" disabled>View x402 terms</button></div>
             </form>
             <p id="console-message" class="console-message" role="status" aria-live="polite">The API token is never saved by this page.</p>
             <div id="payment-action" class="payment-action" hidden><span>Payment request is ready. Open it only with a Devnet wallet.</span><a id="payment-link" class="button button-outline" href="#console">Open Solana Pay URL ↗</a></div>
-            <form id="settle-form" class="settle-form" hidden><label for="signature">Already sent the transfer? Submit its signature.</label><div class="signature-row"><input id="signature" type="text" spellcheck="false" placeholder="Solana transaction signature"><button class="button button-outline" type="submit">Verify</button></div></form>
-            <pre id="api-output" class="api-output" aria-label="Agent API response">{
+            <form id="settle-form" class="settle-form" hidden><label for="signature">Already sent the transfer? Submit its signature.</label><div class="signature-row"><input id="signature" type="text" required spellcheck="false" placeholder="Solana transaction signature"><button class="button button-outline" type="submit">Verify</button></div></form>
+            <pre id="api-output" class="api-output" role="region" aria-label="Agent API response">{
   "status": "waiting_for_request"
 }</pre>
           </div>

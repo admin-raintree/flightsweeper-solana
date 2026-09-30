@@ -19,6 +19,18 @@ const create = async () => {
 
 let invoice = await create();
 process.stdout.write(`${JSON.stringify(invoice, null, 2)}\n`);
+if (process.argv.includes("--x402")) {
+  const result = await fetch(`${base}/invoices/${invoice.invoiceId}/x402`, { headers });
+  if (result.status === 402) {
+    const challenge = result.headers.get("PAYMENT-REQUIRED");
+    if (!challenge) throw new Error("x402 response is missing PAYMENT-REQUIRED");
+    process.stdout.write(`x402 V2 payment requirements:\n${JSON.stringify(JSON.parse(Buffer.from(challenge, "base64").toString("utf8")), null, 2)}\n`);
+  } else if (!result.ok) {
+    throw new Error(`x402 request: HTTP ${result.status} ${(await result.json()).error}`);
+  } else {
+    process.stdout.write("x402 route returned the existing settled receipt.\n");
+  }
+}
 if (invoice.status !== "settled" && process.argv.includes("--watch")) {
   for (let attempt = 0; attempt < 15; attempt++) {
     await Bun.sleep(2_000);

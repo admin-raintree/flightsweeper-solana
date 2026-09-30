@@ -97,7 +97,7 @@ h1 em { font-style: italic; }
 }
 .button:not(:disabled):hover { transform: translateY(-2px); }
 .button-primary { color: #fbf6ec; background: #2a241f; }
-.button-primary:hover { background: #473b31; }
+.button-primary:not(:disabled):hover { background: #473b31; }
 .button-ghost, .button-outline { color: #2a241f; border-color: #d9cfc4; background: #fffcf5c9; }
 .button-ghost:hover, .button-outline:hover { border-color: #7a531a; background: #fffdf8; }
 .duffel-logo { display: block; width: 83px; height: auto; }
