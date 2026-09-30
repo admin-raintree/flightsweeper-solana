@@ -37,6 +37,8 @@ Prerequisites: [Bun 1.3+](https://bun.com/docs/installation), a `duffel_test_` t
 
 The Solana Pay URL does **not** select a cluster. Check that the wallet uses Devnet before sending. Devnet tokens have no real value and the network can reset.
 
+The included agent client creates invoices and reads receipts. It does not hold a wallet key or send a transfer. A separate bounded Devnet wallet sent the verified demo payment. An automated agent wallet can consume the same Solana Pay URL; its signing and spending policy remain outside this service.
+
 ## Agent API
 
 All `/invoices` requests require `Authorization: Bearer <AGENT_API_TOKEN>`.
