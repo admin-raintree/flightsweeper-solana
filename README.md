@@ -16,6 +16,8 @@ The agent pays a demonstration service fee after Duffel reports a paid, ticketed
 | `src/payment.test.mjs` | Checks for the reference, mint, amount, and payer. |
 | `web/` | One-page website and agent console. No API token is embedded in the website; an operator enters one to make API calls. |
 
+The [Duffel logo](https://duffel.com/) and [Solana mark](https://solana.com/branding) in `web/` identify the two test services. Those marks belong to their owners and are excluded from this repository's MIT license. Their use does not imply endorsement.
+
 An integrated fee prototype also exists in the separate FlightSweeper working tree at `packages/backend/src/agent-execution-fee-service.ts` and `apps/web/app/api/agent/execution-fee/`. That prototype uses a local booking fixture for its verified demo. Its code and the hosted traveler flow are **not** included here. This repository runs its own fee demo without that application, but it requires a Duffel test order and a Devnet payer wallet.
 
 ```mermaid

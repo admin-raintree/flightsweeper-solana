@@ -250,6 +250,10 @@ async function handle(request) {
     "/": ["../web/index.html", "text/html; charset=utf-8"],
     "/app.js": ["../web/app.js", "text/javascript; charset=utf-8"],
     "/style.css": ["../web/style.css", "text/css; charset=utf-8"],
+    "/logo-mark.svg": ["../web/logo-mark.svg", "image/svg+xml"],
+    "/duffel-logo.svg": ["../web/duffel-logo.svg", "image/svg+xml"],
+    "/solana-mark.svg": ["../web/solana-mark.svg", "image/svg+xml"],
+    "/hero-bg-generated.avif": ["../web/hero-bg-generated.avif", "image/avif"],
   };
   if (request.method === "GET" && assets[url.pathname]) {
     const [path, contentType] = assets[url.pathname];
@@ -257,7 +261,7 @@ async function handle(request) {
       headers: {
         "Content-Type": contentType,
         "Cache-Control": "no-store",
-        "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'",
+        "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'",
         "X-Content-Type-Options": "nosniff",
         "Referrer-Policy": "no-referrer",
       },
